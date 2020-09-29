@@ -1,0 +1,96 @@
+library(plyr)
+library(dplyr)
+
+## 
+## Attaching package: 'dplyr'
+## The following objects are masked from 'package:plyr':
+## 
+##     arrange, count, desc, failwith, id, mutate, rename, summarise,
+##     summarize
+## The following objects are masked from 'package:stats':
+## 
+##     filter, lag
+## The following objects are masked from 'package:base':
+## 
+##     intersect, setdiff, setequal, union
+
+library(knitr)
+library(tm)
+
+## Loading required package: NLP
+library(NLP)
+library(RWeka)
+library(ggplot2)
+##
+
+## Attaching package: 'ggplot2'
+
+library(stringi)
+
+#Read Text Files
+twitter<-readLines("data/final/en_US/en_US.twitter.txt",warn=FALSE,encoding="UTF-8")
+blogs<-readLines("data/final/en_US/en_US.blogs.txt",warn=FALSE,encoding="UTF-8")
+news<-readLines("data/final/en_US/en_US.news.txt",warn=FALSE,encoding="UTF-8")
+
+#Get Lines,Words,Charachters count
+length(twitter)
+length(blogs)
+length(news)
+twitterwords <-stri_stats_latex(twitter)[4]
+blogswords <-stri_stats_latex(blogs)[4]
+newswords <-stri_stats_latex(news)[4]
+nchar_twitter<-sum(nchar(twitter))
+nchar_blogs<-sum(nchar(blogs))
+nchar_news<-sum(nchar(news))
+
+data.frame("File Name" = c("twitter", "blogs", "news"),
+           "num.lines" = c(length(twitter),length(blogs), length(news)),
+           "num.words" = c(sum(blogswords), sum(newswords), sum(twitterwords)),
+           "Num of character"=c(nchar_blogs,nchar_news,nchar_twitter))
+##   File.Name num.lines num.words Num.of.character
+## 1   twitter   2360148  37570839        206824505
+## 2     blogs    899288   2651432         15639408
+## 3      news     77259  30451128        162096031
+
+set.seed(10000)
+blogs_c<-iconv(blogs,"latin1","ASCII",sub="")
+news_c<-iconv(news,"latin1","ASCII",sub="")
+twitter_c<-iconv(twitter,"latin1","ASCII",sub="")
+
+sampledata<-c(sample(twitter_c,length(twitter_c)*0.01),
+              sample(blogs_c,length(blogs_c)*0.01),
+              sample(news_c,length(news_c)*0.01))
+
+corpus <- VCorpus(VectorSource(sampledata))
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+corpus <- tm_map(corpus, toSpace, "(f|ht)tp(s?)://(.*)[.][a-z]+")
+corpus <- tm_map(corpus, toSpace, "@[^\\s]+")
+corpus <- tm_map(corpus, tolower)
+corpus <- tm_map(corpus, removeWords, stopwords("en"))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, PlainTextDocument)
+corpusresult<-data.frame(text=unlist(sapply(corpus,'[',"content")),stringsAsFactors = FALSE)
+head(corpusresult)
+##                                                                                       text
+## 1                              less appropriate workplace flipflops ternary operator fence
+## 2 rt hedge fund shorting venturebacked nontechnical founding teams trying hire developers 
+## 3                                                                really want descriptive x
+## 4                                                                     sounds like good day
+## 5                                                                           ignoring word 
+## 6                                                                           girls awesome
+
+### Unigram
+
+unigram<-function(x) NGramTokenizer(x,Weka_control(min=1,max=1))
+unigramtab<-TermDocumentMatrix(corpus,control=list(tokenize=unigram))
+unigramcorpus<-findFreqTerms(unigramtab,lowfreq=1000)
+unigramcorpusnum<-rowSums(as.matrix(unigramtab[unigramcorpus,]))
+unigramcorpustab<-data.frame(Word=names(unigramcorpusnum),frequency=unigramcorpusnum)
+unigramcorpussort<-unigramcorpustab[order(-unigramcorpustab$frequency),]
+
+ggplot(unigramcorpussort[1:15,],aes(x=reorder(Word,-frequency),y=frequency))+
+  geom_bar(stat="identity",fill = I("grey50"))+
+  labs(title="Unigrams",x="Most Words",y="Frequency")+
+  theme(axis.text.x=element_text(angle=60))
